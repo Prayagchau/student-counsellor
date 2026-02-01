@@ -1,7 +1,15 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, GraduationCap, Phone } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Menu, X, GraduationCap, Phone, User, LogOut } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const navLinks = [
   { name: "Home", path: "/" },
@@ -14,6 +22,15 @@ const navLinks = [
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
+  const dashboardPath = user?.role === "student" ? "/dashboard/student" : "/dashboard/counsellor";
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-border/50">
@@ -53,11 +70,40 @@ export function Header() {
               <Phone className="h-4 w-4" />
               +91 98765 43210
             </a>
-            <Link to="/book">
-              <Button variant="hero" size="default">
-                Book Counselling
-              </Button>
-            </Link>
+            
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <User className="h-4 w-4" />
+                    {user?.fullName?.split(" ")[0]}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem asChild>
+                    <Link to={dashboardPath} className="cursor-pointer">
+                      Dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="outline">Login</Button>
+                </Link>
+                <Link to="/signup">
+                  <Button variant="hero" size="default">
+                    Sign Up
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -91,12 +137,33 @@ export function Header() {
                   {link.name}
                 </Link>
               ))}
-              <div className="mt-4 px-4">
-                <Link to="/book" onClick={() => setIsMenuOpen(false)}>
-                  <Button variant="hero" className="w-full">
-                    Book Counselling
-                  </Button>
-                </Link>
+              <div className="mt-4 px-4 space-y-2">
+                {isAuthenticated ? (
+                  <>
+                    <Link to={dashboardPath} onClick={() => setIsMenuOpen(false)}>
+                      <Button variant="outline" className="w-full">
+                        Dashboard
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" className="w-full text-destructive" onClick={() => { handleLogout(); setIsMenuOpen(false); }}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={() => setIsMenuOpen(false)}>
+                      <Button variant="outline" className="w-full">
+                        Login
+                      </Button>
+                    </Link>
+                    <Link to="/signup" onClick={() => setIsMenuOpen(false)}>
+                      <Button variant="hero" className="w-full">
+                        Sign Up
+                      </Button>
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </nav>
