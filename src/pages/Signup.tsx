@@ -31,7 +31,7 @@ const signupSchema = z.object({
     .regex(/[a-z]/, { message: "Password must contain at least one lowercase letter" })
     .regex(/[0-9]/, { message: "Password must contain at least one number" }),
   confirmPassword: z.string(),
-  role: z.enum(["student", "counsellor"], {
+  role: z.enum(["student", "counsellor"] as const, {
     required_error: "Please select your role",
   }),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -61,7 +61,7 @@ export default function Signup() {
 
   // Redirect if already logged in
   if (user) {
-    const redirectPath = user.role === "student" ? "/dashboard/student" : "/dashboard/counsellor";
+    const redirectPath = (user.role === "student" || user.role === "user") ? "/dashboard/student" : "/dashboard/counsellor";
     navigate(redirectPath, { replace: true });
     return null;
   }

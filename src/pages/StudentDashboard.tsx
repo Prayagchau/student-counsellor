@@ -40,7 +40,7 @@ export default function StudentDashboard() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-foreground">
-                  Welcome back, {user?.fullName?.split(" ")[0]}! 👋
+                  Welcome back, {user?.fullName?.split(" ")[0] || user?.name?.split(" ")[0]}! 👋
                 </h1>
                 <p className="text-muted-foreground mt-1">
                   Track your appointments and continue your career journey

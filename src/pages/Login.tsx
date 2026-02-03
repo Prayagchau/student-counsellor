@@ -42,7 +42,7 @@ export default function Login() {
 
   // Redirect if already logged in
   if (user) {
-    const redirectPath = from || (user.role === "student" ? "/dashboard/student" : "/dashboard/counsellor");
+    const redirectPath = from || (user.role === "student" || user.role === "user" ? "/dashboard/student" : "/dashboard/counsellor");
     navigate(redirectPath, { replace: true });
     return null;
   }

@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { authApi } from "@/lib/api";
 
-export type UserRole = "student" | "counsellor";
+export type UserRole = "student" | "user" | "counsellor" | "admin";
 
 export interface User {
   id: string;
-  fullName: string;
+  name: string;
+  fullName?: string; // Alias for name for backward compatibility
   email: string;
   role: UserRole;
+  isActive?: boolean;
   createdAt: string;
 }
 
@@ -17,26 +20,13 @@ interface AuthContextType {
   signup: (fullName: string, email: string, password: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isAuthenticated: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Simulate password hashing (in production, use bcrypt on backend)
-const hashPassword = (password: string): string => {
-  return btoa(password + "_salt_eduguide");
-};
-
-const verifyPassword = (password: string, hash: string): boolean => {
-  return hashPassword(password) === hash;
-};
-
-const generateId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
-
-interface StoredUser extends User {
-  passwordHash: string;
-}
+// Check if we're in development mode without backend
+const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK_AUTH === 'true';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -44,95 +34,126 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check for existing session
-    const storedSession = localStorage.getItem("eduguide_session") || sessionStorage.getItem("eduguide_session");
-    if (storedSession) {
-      try {
-        const sessionData = JSON.parse(storedSession);
-        setUser(sessionData.user);
-      } catch {
-        localStorage.removeItem("eduguide_session");
-        sessionStorage.removeItem("eduguide_session");
+    const checkSession = async () => {
+      const storedSession = localStorage.getItem("eduguide_session") || sessionStorage.getItem("eduguide_session");
+      if (storedSession) {
+        try {
+          const sessionData = JSON.parse(storedSession);
+          
+          // If using real API, verify token is still valid
+          if (!USE_MOCK_AUTH && sessionData.token) {
+            const response = await authApi.getProfile();
+            if (response.success && response.data?.user) {
+              const userData = response.data.user as User;
+              setUser(userData);
+            } else {
+              // Token expired, clear session
+              localStorage.removeItem("eduguide_session");
+              sessionStorage.removeItem("eduguide_session");
+            }
+          } else {
+            // Mock mode or no token
+            setUser(sessionData.user);
+          }
+        } catch {
+          localStorage.removeItem("eduguide_session");
+          sessionStorage.removeItem("eduguide_session");
+        }
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+
+    checkSession();
   }, []);
 
-  const getUsers = (): StoredUser[] => {
-    const usersData = localStorage.getItem("eduguide_users");
-    return usersData ? JSON.parse(usersData) : [];
-  };
-
-  const saveUsers = (users: StoredUser[]) => {
-    localStorage.setItem("eduguide_users", JSON.stringify(users));
+  const refreshProfile = async () => {
+    if (USE_MOCK_AUTH) return;
+    
+    try {
+      const response = await authApi.getProfile();
+      if (response.success && response.data?.user) {
+        setUser(response.data.user as User);
+      }
+    } catch (error) {
+      console.error('Failed to refresh profile:', error);
+    }
   };
 
   const login = async (email: string, password: string, rememberMe = false): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
 
-    const users = getUsers();
-    const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    try {
+      const response = await authApi.login({ email, password });
 
-    if (!foundUser) {
+      if (!response.success) {
+        setIsLoading(false);
+        return { success: false, error: response.message };
+      }
+
+      const { user: userData, token } = response.data as { user: User; token: string };
+      
+      // Map 'user' role to 'student' for frontend compatibility
+      const normalizedUser: User = {
+        ...userData,
+        fullName: userData.name, // Add fullName alias
+        role: userData.role === 'user' ? 'student' : userData.role,
+      };
+
+      const sessionData = { user: normalizedUser, token, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 };
+
+      if (rememberMe) {
+        localStorage.setItem("eduguide_session", JSON.stringify(sessionData));
+      } else {
+        sessionStorage.setItem("eduguide_session", JSON.stringify(sessionData));
+      }
+
+      setUser(normalizedUser);
       setIsLoading(false);
-      return { success: false, error: "No account found with this email address" };
-    }
-
-    if (!verifyPassword(password, foundUser.passwordHash)) {
+      return { success: true };
+    } catch (error) {
       setIsLoading(false);
-      return { success: false, error: "Incorrect password. Please try again" };
+      return { success: false, error: "Login failed. Please try again." };
     }
-
-    const { passwordHash, ...userWithoutPassword } = foundUser;
-    const sessionData = { user: userWithoutPassword, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 };
-
-    if (rememberMe) {
-      localStorage.setItem("eduguide_session", JSON.stringify(sessionData));
-    } else {
-      sessionStorage.setItem("eduguide_session", JSON.stringify(sessionData));
-    }
-
-    setUser(userWithoutPassword);
-    setIsLoading(false);
-    return { success: true };
   };
 
   const signup = async (fullName: string, email: string, password: string, role: UserRole): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
 
-    const users = getUsers();
-    
-    // Check if email already exists
-    if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+    try {
+      // Map frontend 'student' role to backend 'user' role
+      const backendRole = role === 'student' ? 'user' : role;
+      
+      const response = await authApi.signup({
+        name: fullName,
+        email,
+        password,
+        role: backendRole,
+      });
+
+      if (!response.success) {
+        setIsLoading(false);
+        return { success: false, error: response.message };
+      }
+
+      const { user: userData, token } = response.data as { user: User; token: string };
+      
+      // Map 'user' role to 'student' for frontend compatibility
+      const normalizedUser: User = {
+        ...userData,
+        fullName: userData.name, // Add fullName alias
+        role: userData.role === 'user' ? 'student' : userData.role,
+      };
+
+      const sessionData = { user: normalizedUser, token, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 };
+      sessionStorage.setItem("eduguide_session", JSON.stringify(sessionData));
+
+      setUser(normalizedUser);
       setIsLoading(false);
-      return { success: false, error: "An account with this email already exists" };
+      return { success: true };
+    } catch (error) {
+      setIsLoading(false);
+      return { success: false, error: "Signup failed. Please try again." };
     }
-
-    const newUser: StoredUser = {
-      id: generateId(),
-      fullName,
-      email: email.toLowerCase(),
-      role,
-      passwordHash: hashPassword(password),
-      createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    saveUsers(users);
-
-    // Auto login after signup
-    const { passwordHash, ...userWithoutPassword } = newUser;
-    const sessionData = { user: userWithoutPassword, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 };
-    sessionStorage.setItem("eduguide_session", JSON.stringify(sessionData));
-    
-    setUser(userWithoutPassword);
-    setIsLoading(false);
-    return { success: true };
   };
 
   const logout = () => {
@@ -142,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, isAuthenticated: !!user, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
