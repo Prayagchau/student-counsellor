@@ -30,7 +30,7 @@ export function Header() {
     navigate("/");
   };
 
-  const dashboardPath = user?.role === "student" ? "/dashboard/student" : "/dashboard/counsellor";
+  const dashboardPath = (user?.role === "student" || user?.role === "user") ? "/dashboard/student" : "/dashboard/counsellor";
 
   return (
     <header className="sticky top-0 z-50 w-full glass border-b border-border/50">
@@ -76,7 +76,7 @@ export function Header() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="gap-2">
                     <User className="h-4 w-4" />
-                    {user?.fullName?.split(" ")[0]}
+                    {user?.fullName?.split(" ")[0] || user?.name?.split(" ")[0]}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
